@@ -110,6 +110,16 @@ public:
         return ERR_NOT_SUPPORTED;
     }
 
+    // TODO: In the future this will likely move out of the VMObject space and closer
+    // into mapping / driver space based on privileged access.
+    virtual status_t GetMappingCachePolicy(uint32_t* policy) {
+        return ERR_NOT_SUPPORTED;
+    }
+
+    virtual status_t SetMappingCachePolicy(uint32_t policy) {
+        return ERR_NOT_SUPPORTED;
+    }
+
     // create a copy-on-write clone vmo at the page-aligned offset and length
     // note: it's okay to start or extend past the size of the parent
     virtual status_t CloneCOW(uint64_t offset, uint64_t size, mxtl::RefPtr<VmObject>* clone_vmo) {
@@ -159,6 +169,7 @@ protected:
 
     // declare a local mutex and default to pointing at it
     // if constructed with a parent vmo, point lock_ at the parent's lock
+
 private:
     Mutex local_lock_;
 

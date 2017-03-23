@@ -24,7 +24,6 @@
 #endif
 
 #define LOCAL_TRACE MAX(VM_GLOBAL_TRACE, 0)
-
 VmAddressRegion::VmAddressRegion(VmAspace& aspace, vaddr_t base, size_t size, uint32_t vmar_flags)
     : VmAddressRegionOrMapping(base, size, vmar_flags | VMAR_CAN_RWX_FLAGS,
                                &aspace, nullptr, "root") {
@@ -78,6 +77,7 @@ status_t VmAddressRegion::CreateSubVmarInternal(size_t offset, size_t size, uint
                                                 const char* name,
                                                 mxtl::RefPtr<VmAddressRegionOrMapping>* out) {
     DEBUG_ASSERT(out);
+    DEBUG_ASSERT((arch_mmu_flags & ARCH_MMU_FLAG_CACHE_MASK) == 0);
 
     AutoLock guard(aspace_->lock());
     if (state_ != LifeCycleState::ALIVE) {
@@ -107,6 +107,21 @@ status_t VmAddressRegion::CreateSubVmarInternal(size_t offset, size_t size, uint
 
     if (offset >= size_ || size > size_ - offset) {
         return ERR_INVALID_ARGS;
+    }
+
+    // Check to see if a cache policy exists if a VMO is passed in. VMOs that are not physical
+    // return ERR_UNSUPPORTED, anything aside from that and NO_ERROR is an error.
+    // TODO(cja): explore whether it makes sense to add a default PAGED value to VmObjectPaged
+    // and allow them to be treated the same, since by default we're mapping those objects that
+    // way anyway.
+    uint32_t cache_policy;
+    if (vmo) {
+        status_t status = vmo->GetMappingCachePolicy(&cache_policy);
+        if (status == NO_ERROR) {
+            arch_mmu_flags |= cache_policy;
+        } else if (status != ERR_NOT_SUPPORTED) {
+            return ERR_INVALID_ARGS;
+        }
     }
 
     vaddr_t new_base = -1;

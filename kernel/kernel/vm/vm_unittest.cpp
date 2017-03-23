@@ -43,8 +43,7 @@ static bool pmm_large_alloc_test(void* context) {
 
     auto count = pmm_alloc_pages(alloc_count, 0, &list);
     EXPECT_EQ(alloc_count, count, "pmm_alloc_pages a bunch of pages count");
-    EXPECT_EQ(alloc_count, list_length(&list),
-              "pmm_alloc_pages a bunch of pages list count");
+    EXPECT_EQ(alloc_count, list_length(&list), "pmm_alloc_pages a bunch of pages list count");
 
     auto ret = pmm_free(&list);
     EXPECT_EQ(alloc_count, ret, "pmm_free_page on a list of pages");
@@ -56,14 +55,12 @@ static bool pmm_oversized_alloc_test(void* context) {
     BEGIN_TEST;
     list_node list = LIST_INITIAL_VALUE(list);
 
-    static const size_t alloc_count =
-        (128 * 1024 * 1024 * 1024ULL) / PAGE_SIZE; // 128GB
+    static const size_t alloc_count = (128 * 1024 * 1024 * 1024ULL) / PAGE_SIZE; // 128GB
 
     auto count = pmm_alloc_pages(alloc_count, 0, &list);
     EXPECT_NEQ(alloc_count, 0, "pmm_alloc_pages too many pages count > 0");
     EXPECT_NEQ(alloc_count, count, "pmm_alloc_pages too many pages count");
-    EXPECT_EQ(count, list_length(&list),
-              "pmm_alloc_pages too many pages list count");
+    EXPECT_EQ(count, list_length(&list), "pmm_alloc_pages too many pages list count");
 
     auto ret = pmm_free(&list);
     EXPECT_EQ(count, ret, "pmm_free_page on a list of pages");
@@ -103,7 +100,8 @@ static bool test_region(uintptr_t seed, void* _ptr, size_t len) {
 #endif
     for (size_t i = 0; i < len / 4; i++) {
         if (ptr[i] != val) {
-            unittest_printf("value at %p (%zu) is incorrect: 0x%x vs 0x%x\n", &ptr[i], i, ptr[i], val);
+            unittest_printf("value at %p (%zu) is incorrect: 0x%x vs 0x%x\n", &ptr[i], i, ptr[i],
+                            val);
             return false;
         }
 
@@ -330,8 +328,7 @@ static bool vmo_commit_test(void* context) {
     uint64_t committed;
     auto ret = vmo->CommitRange(0, alloc_size, &committed);
     EXPECT_EQ(0, ret, "committing vm object\n");
-    EXPECT_EQ(ROUNDUP_PAGE_SIZE(alloc_size), committed,
-              "committing vm object\n");
+    EXPECT_EQ(ROUNDUP_PAGE_SIZE(alloc_size), committed, "committing vm object\n");
     END_TEST;
 }
 
@@ -345,8 +342,7 @@ static bool vmo_odd_size_commit_test(void* context) {
     uint64_t committed;
     auto ret = vmo->CommitRange(0, alloc_size, &committed);
     EXPECT_EQ(0, ret, "committing vm object\n");
-    EXPECT_EQ(ROUNDUP_PAGE_SIZE(alloc_size), committed,
-              "committing vm object\n");
+    EXPECT_EQ(ROUNDUP_PAGE_SIZE(alloc_size), committed, "committing vm object\n");
     END_TEST;
 }
 
@@ -360,8 +356,7 @@ static bool vmo_contiguous_commit_test(void* context) {
     uint64_t committed;
     auto ret = vmo->CommitRangeContiguous(0, alloc_size, &committed, 0);
     EXPECT_EQ(0, ret, "committing vm object contig\n");
-    EXPECT_EQ(ROUNDUP_PAGE_SIZE(alloc_size), committed,
-              "committing vm object contig\n");
+    EXPECT_EQ(ROUNDUP_PAGE_SIZE(alloc_size), committed, "committing vm object contig\n");
     END_TEST;
 }
 
@@ -507,8 +502,7 @@ static bool vmo_double_remap_test(void* context) {
     EXPECT_NEQ(ptr3, ptr, "third mapping is different");
 
     // test that the pattern is still valid
-    int mc =
-        memcmp((uint8_t*)ptr + alloc_offset, ptr3, alloc_size - alloc_offset);
+    int mc = memcmp((uint8_t*)ptr + alloc_offset, ptr3, alloc_size - alloc_offset);
     EXPECT_EQ(0, mc, "testing region for corruption");
 
     ret = ka->FreeRegion((vaddr_t)ptr3);
@@ -619,6 +613,81 @@ static bool vmo_read_write_smoke_test(void* context) {
     END_TEST;
 }
 
+bool vmo_cache_test(void* context) {
+    BEGIN_TEST;
+
+    paddr_t pa;
+    vm_page_t* vm_page = pmm_alloc_page(0, &pa);
+    auto ka = VmAspace::kernel_aspace();
+    uint32_t cache_policy = ARCH_MMU_FLAG_UNCACHED_DEVICE;
+    uint32_t cache_policy_get;
+    void* ptr;
+
+    EXPECT_TRUE(vm_page, "");
+    // Test that the flags set/get properly
+    {
+        auto vmo = VmObjectPhysical::Create(pa, PAGE_SIZE);
+        EXPECT_TRUE(vmo, "");
+        EXPECT_EQ(NO_ERROR, vmo->GetMappingCachePolicy(&cache_policy_get), "try get");
+        EXPECT_NEQ(cache_policy, cache_policy_get, "check initial cache policy");
+        EXPECT_EQ(NO_ERROR, vmo->SetMappingCachePolicy(cache_policy), "try set");
+        EXPECT_EQ(NO_ERROR, vmo->GetMappingCachePolicy(&cache_policy_get), "try get");
+        EXPECT_EQ(cache_policy, cache_policy_get, "compare flags");
+    }
+
+    // Test that we can't set the flags twice
+    {
+        auto vmo = VmObjectPhysical::Create(pa, PAGE_SIZE);
+        EXPECT_TRUE(vmo, "");
+        EXPECT_EQ(NO_ERROR, vmo->SetMappingCachePolicy(cache_policy), "try set");
+        EXPECT_EQ(ERR_ACCESS_DENIED, vmo->SetMappingCachePolicy(cache_policy),
+                  "try set a second time");
+    }
+
+    // Test valid flags
+    for (uint32_t i = 0; i <= ARCH_MMU_FLAG_CACHE_MASK; i++) {
+        auto vmo = VmObjectPhysical::Create(pa, PAGE_SIZE);
+        EXPECT_TRUE(vmo, "");
+        EXPECT_EQ(NO_ERROR, vmo->SetMappingCachePolicy(cache_policy), "try setting valid flags");
+    }
+
+    // Test invalid flags
+    for (uint32_t i = ARCH_MMU_FLAG_CACHE_MASK + 1; i < 32; i++) {
+        auto vmo = VmObjectPhysical::Create(pa, PAGE_SIZE);
+        EXPECT_TRUE(vmo, "");
+        EXPECT_EQ(ERR_INVALID_ARGS, vmo->SetMappingCachePolicy(i), "try set with invalid flags");
+    }
+
+    // Test valid flags with invalid flags
+    {
+        auto vmo = VmObjectPhysical::Create(pa, PAGE_SIZE);
+        EXPECT_EQ(ERR_INVALID_ARGS, vmo->SetMappingCachePolicy(cache_policy | 0x5), "bad 0x5");
+        EXPECT_EQ(ERR_INVALID_ARGS, vmo->SetMappingCachePolicy(cache_policy | 0xA), "bad 0xA");
+        EXPECT_EQ(ERR_INVALID_ARGS, vmo->SetMappingCachePolicy(cache_policy | 0x55), "bad 0x55");
+        EXPECT_EQ(ERR_INVALID_ARGS, vmo->SetMappingCachePolicy(cache_policy | 0xAA), "bad 0xAA");
+    }
+
+    // Test that changing policy while mapped is blocked
+    {
+        auto vmo = VmObjectPhysical::Create(pa, PAGE_SIZE);
+        EXPECT_TRUE(vmo, "");
+        EXPECT_EQ(NO_ERROR,
+                  ka->MapObject(vmo, "test", 0, PAGE_SIZE, (void**)&ptr, 0, 0, 0, kArchRwFlags),
+                  "map vmo");
+        EXPECT_EQ(ERR_UNAVAILABLE, vmo->SetMappingCachePolicy(cache_policy),
+                  "set flags while mapped");
+        EXPECT_EQ(NO_ERROR, ka->FreeRegion((vaddr_t)ptr), "unmap vmo");
+        EXPECT_EQ(NO_ERROR, vmo->SetMappingCachePolicy(cache_policy), "set flags after unmapping");
+        EXPECT_EQ(NO_ERROR,
+                  ka->MapObject(vmo, "test", 0, PAGE_SIZE, (void**)&ptr, 0, 0, 0, kArchRwFlags),
+                  "map vmo again");
+        EXPECT_EQ(NO_ERROR, ka->FreeRegion((vaddr_t)ptr), "unmap vmo");
+    }
+
+    pmm_free_page(vm_page);
+    END_TEST;
+}
+
 // Use the function name as the test name
 #define VM_UNITTEST(fname) UNITTEST(#fname, fname)
 
@@ -646,4 +715,6 @@ VM_UNITTEST(vmo_remap_test)
 VM_UNITTEST(vmo_double_remap_test)
 VM_UNITTEST(vmo_read_write_smoke_test)
 VM_UNITTEST(dump_all_aspaces) // Run last
+// Uncomment for debugging
+// VM_UNITTEST(dump_all_aspaces)  // Run last
 UNITTEST_END_TESTCASE(vm_tests, "vmtests", "Virtual memory tests", nullptr, nullptr);

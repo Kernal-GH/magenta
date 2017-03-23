@@ -260,3 +260,22 @@ mx_status_t sys_vmo_clone(mx_handle_t handle, uint32_t options, uint64_t offset,
 
     return NO_ERROR;
 }
+
+mx_status_t sys_vmo_set_cache_policy(mx_handle_t handle, uint32_t cache_policy) {
+    mxtl::RefPtr<VmObjectDispatcher> vmo;
+    mx_status_t status = NO_ERROR;
+    auto up = ProcessDispatcher::GetCurrent();
+
+    // Sanity check the cache policy.
+    if (cache_policy & ~MX_CACHE_POLICY_MASK) {
+        return ERR_INVALID_ARGS;
+    }
+
+    // lookup the dispatcher from handle.
+    status = up->GetDispatcherWithRights(handle, MX_RIGHT_MAP, &vmo);
+    if (status != NO_ERROR) {
+        return status;
+    }
+
+    return vmo->SetMappingCachePolicy(cache_policy);
+}

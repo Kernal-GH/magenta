@@ -380,7 +380,6 @@ status_t VmAspace::AllocPhysical(const char* name, size_t size, void** ptr, uint
     canary_.Assert();
     LTRACEF("aspace %p name '%s' size %#zx ptr %p paddr %#" PRIxPTR " vmm_flags 0x%x arch_mmu_flags 0x%x\n",
             this, name, size, ptr ? *ptr : 0, paddr, vmm_flags, arch_mmu_flags);
-
     DEBUG_ASSERT(IS_PAGE_ALIGNED(paddr));
 
     if (size == 0)
@@ -398,6 +397,12 @@ status_t VmAspace::AllocPhysical(const char* name, size_t size, void** ptr, uint
     // force it to be mapped up front
     // TODO: add new flag to precisely mean pre-map
     vmm_flags |= VMM_FLAG_COMMIT;
+
+    // Lock the cache policy into the VMO.
+    uint32_t vmo_cache_flags = arch_mmu_flags & ARCH_MMU_FLAG_CACHE_MASK;
+    arch_mmu_flags &= ~ARCH_MMU_FLAG_CACHE_MASK;
+    if (vmo->SetMappingCachePolicy(vmo_cache_flags) != NO_ERROR)
+        return ERR_INVALID_ARGS;
 
     return MapObjectInternal(mxtl::move(vmo), name, 0, size, ptr, align_pow2, vmm_flags,
                      arch_mmu_flags);
